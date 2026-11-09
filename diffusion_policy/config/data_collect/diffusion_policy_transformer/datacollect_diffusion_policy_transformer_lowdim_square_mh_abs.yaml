@@ -1,0 +1,29 @@
+defaults:
+  - _self_
+  - task: square_lowdim_abs
+
+name: datacollect_diffusion_transformer_lowdim
+_target_: diffusion_policy.workspace.datacollect_diffusion_lowdim_workspace.DatacollectDiffusionLowdimWorkspace
+checkpoint_dir: null
+
+task_name: ${task.name}
+
+horizon: 10
+n_obs_steps: 2
+n_action_steps: 8
+n_latency_steps: 0
+past_action_visible: False
+keypoint_visible_rate: 1.0
+
+collecting:
+  device: "cuda:0"
+  seed: 42
+  num_episodes: 500  # number of episodes to collect
+  render_image: True
+
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: logs/collect_data/${task_name}/${name}_${task_name}

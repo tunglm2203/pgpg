@@ -1,0 +1,90 @@
+name: can_lowdim
+
+obs_dim: 23
+action_dim: 10
+keypoint_dim: 3
+
+obs_keys: &obs_keys ['object', 'robot0_eef_pos', 'robot0_eef_quat', 'robot0_gripper_qpos']
+task_name: &task_name can
+dataset_type: &dataset_type mh
+dataset_path: data/robomimic/datasets/${task.task_name}/${task.dataset_type}/low_dim_abs.hdf5
+abs_action: &abs_action True
+dense_reward: False
+
+env_runner:
+  _target_: diffusion_policy.env_runner.robomimic_lowdim_runner.RobomimicLowdimRunner
+  dataset_path: ${task.dataset_path}
+  obs_keys: *obs_keys
+  n_train: 0
+  n_train_vis: 0
+  train_start_idx: 0
+  n_test: 50
+  n_test_vis: 0
+  test_start_seed: 100000
+  # use python's eval function as resolver, single-quoted string as argument
+  max_steps: ${eval:'500 if "${task.dataset_type}" == "mh" else 400'}
+  n_obs_steps: ${n_obs_steps}
+  n_action_steps: ${n_action_steps}
+  n_latency_steps: ${n_latency_steps}
+  render_hw: [128,128]
+  fps: 10
+  crf: 22
+  past_action: ${past_action_visible}
+  abs_action: *abs_action
+  n_envs: 50
+
+dataset:
+  _target_: diffusion_policy.dataset.robomimic_replay_lowdim_dataset.RobomimicReplayLowdimDataset
+  dataset_path: ${task.dataset_path}
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1+${n_latency_steps}'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  obs_keys: *obs_keys
+  abs_action: *abs_action
+  use_legacy_normalizer: False
+  rotation_rep: rotation_6d
+  seed: 42
+  val_ratio: 0.02
+  dense_reward: ${task.dense_reward}
+
+dataset_1:
+  _target_: diffusion_policy.dataset.hdf5_lowdim_dataset.Hdf5LowdimDataset
+  dataset_dir: ${training.dataset_1_dir}
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1+${n_latency_steps}'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  seed: 42
+  val_ratio: 0
+  dense_reward: ${task.dense_reward}
+
+dataset_2:
+  _target_: diffusion_policy.dataset.hdf5_lowdim_dataset.Hdf5LowdimDataset
+  dataset_dir: ${training.dataset_2_dir}
+  horizon: ${horizon}
+  pad_before: ${eval:'${n_obs_steps}-1+${n_latency_steps}'}
+  pad_after: ${eval:'${n_action_steps}-1'}
+  seed: 42
+  val_ratio: 0
+  dense_reward: ${task.dense_reward}
+
+pref_dataset:
+  _target_: diffusion_policy.dataset.pbrl_lowdim_dataset.PbrlLowdimDataset
+  sequence_length: 100
+  val_ratio_data1: 0
+  val_ratio_data2: 0
+  num_queries: 1000
+  gamma: ${gamma}
+  gpu_device: ${training.device}
+  dense_reward: ${task.dense_reward}
+  task_name: ${task.name}
+  pseudo_preference: False
+  feature_extractor: r3m_resnet18
+  context_num: 3
+  seg_margin: 0.6
+  min_progress: 0.0
+  n_demos_for_preference: 10
+  # Alignment metric for pseudo-labelling: orca | dtw | temporal_ot
+  reward_type: orca
+  # Marginal Progress Scoring (Eq.3). null = historical default (ORCA only); true = all metrics
+  marginal_scoring: null
+

@@ -1,0 +1,145 @@
+defaults:
+  - _self_
+  - task: transport_lowdim_abs_pbrl
+
+name: train_pbrl_reflow_transformer
+
+_target_: diffusion_policy.workspace.train_pbrl_reflow_transformer_lowdim_offline_workspace.PbrlReFlowTransformerLowdimWorkspace
+checkpoint_dir: logs/pretrain/transport_lowdim/reflow_transformer_ERate.98/reflow_transformer_ERate.98_42/checkpoints/epoch=0300-test_mean_score=0.400.ckpt
+
+obs_dim: ${task.obs_dim}
+action_dim: ${task.action_dim}
+task_name: ${task.name}
+
+gamma: 0.999    # discount factor in MDP
+horizon: 10   # this horizon is for dataloader
+n_obs_steps: 2
+n_action_steps: 8
+n_latency_steps: 0
+past_action_visible: False
+
+# Used during evaluation (both during training and evaluation)
+test_clip_intermediate_actions: True
+test_denoising_steps: 8
+test_model_type: 'original'  # can be "ema", "original"
+
+policy:
+  _target_: diffusion_policy.policy.cpl_reflow_transformer_lowdim_policy.CplReFlowTransformerLowdimPolicy
+
+  model:
+    _target_: diffusion_policy.model.diffusion.transformer_for_diffusion.TransformerForDiffusion
+    input_dim: ${action_dim}
+    output_dim: ${policy.model.input_dim}
+    horizon: ${eval:'${horizon}-${n_obs_steps}+1'}
+    n_obs_steps: ${n_obs_steps}
+    cond_dim: ${obs_dim}
+
+    n_layer: 8
+    n_head: 4
+    n_emb: 256
+    p_drop_emb: 0.0
+    p_drop_attn: 0.3
+
+    causal_attn: True
+    time_as_cond: True # if false, use BERT like encoder only arch, time as input
+    obs_as_cond: True
+    n_cond_layers: 0 # >0: use transformer encoder for cond, otherwise use MLP
+
+  horizon: ${eval:'${horizon}-${n_obs_steps}+1'}
+  obs_dim: ${obs_dim}
+  action_dim: ${action_dim}
+  n_action_steps: ${eval:'${n_action_steps}+${n_latency_steps}'}
+  n_obs_steps: ${n_obs_steps}
+  sample_t_type: uniform # beta, logitnormal
+
+  beta: 0.1
+  bias_reg: 0.25
+  ignore_equal_pref: False
+  clip_margin: null  # null = disabled; recommended 10.0 for beta=0.0003125, 0.3 for beta=0.01
+  smooth_label: 0.0
+  confidence_weight: False
+  cw_temperature: 0.03
+  unclip_win: False
+
+ema:
+  decay: 0.995
+
+dataloader:
+  batch_size: 128
+  num_workers: 1
+  shuffle: True
+  pin_memory: True
+  persistent_workers: False
+
+
+optimizer:
+  lr: 1e-4   # 1.0e-4
+  weight_decay: 1e-6
+
+training:
+  device: "cuda:0"
+  seed: 42
+  debug: False
+  resume: True
+  # optimization
+  lr_scheduler: cosine
+  # Transformer needs LR warmup
+  lr_warmup_steps: 0
+  epoch_start_ema: 0
+  update_ema_freq: 10
+  num_epochs: 1000
+  use_ema: True
+  # training loop control
+  # in epochs
+  rollout_every: 25
+  checkpoint_every: 25
+  val_every: 1
+  max_train_steps: null
+  max_val_steps: null
+  # misc
+  tqdm_interval_sec: 1.0
+
+  cpl_loss_type: 'cplkl'   # 'cpl'
+  use_expert_data_1: False
+  use_expert_data_2: False
+  n_epoch_sft: 0
+  sft_type: "pos"
+  stride_ratio: 0.5
+  pseudo_preference: False
+
+  dataset_1_dir: 'data/robomimic/datasets/lift/noraml/robomimic_data_0.5.h5'
+  dataset_2_dir: 'data/robomimic/datasets/lift/noraml/robomimic_data_0.5_2.h5'
+  preference_learning:
+    num_rounds: 1
+    equal_threshold: 0.05
+
+logging:
+  project: IL-DP-2026
+  resume: False
+  mode: online
+  name: ${name}_${training.seed}
+  tags: ["${task_name}"]
+  id: null
+  group: ${name}
+
+checkpoint:
+  topk:
+    monitor_key: test_mean_score
+    mode: max
+    k: 3
+    format_str: 'epoch={epoch:04d}-test_mean_score={test_mean_score:.3f}.ckpt'
+  save_last_ckpt: True
+  save_last_snapshot: False
+
+multi_run:
+  run_dir: logs/reproduce/${task_name}/${logging.group}/${logging.name}
+  wandb_name_base: ${name}_${training.seed}
+
+hydra:
+  job:
+    override_dirname: ${name}
+  run:
+    dir: logs/reproduce/${task_name}/${logging.group}/${logging.name}
+  sweep:
+    dir: logs/reproduce/${task_name}/${logging.group}/${logging.name}
+    subdir: ${hydra.job.num}
